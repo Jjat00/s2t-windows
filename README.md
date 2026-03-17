@@ -6,13 +6,14 @@ Aplicación de escritorio para Windows que captura audio del micrófono en tiemp
 
 ## Características
 
-- **Transcripción en tiempo real** con Deepgram (cloud, ~300ms de latencia) o faster-whisper (local, sin internet)
+- **Dictado fluido en tiempo real** — las palabras aparecen mientras hablas (~100ms con Deepgram), sin esperar a terminar la frase
 - **Escribe donde esté el cursor** — funciona en cualquier aplicación (VS Code, Word, Notion, Chrome, etc.)
-- **Multiidioma** — español, inglés, francés, portugués y más
-- **Detección de pausas** — solo escribe cuando terminas una frase, no en mitad de la oración
+- **Multiidioma** — español, inglés, francés, portugués y más, configurable en `.env`
+- **Dos motores** — Deepgram (cloud, ~100ms) o faster-whisper (local, sin internet)
 - **Sin duplicados** — deduplicación por similitud para evitar frases repetidas
+- **Sin parpadeo** — los resultados parciales se extienden palabra por palabra, sin borrar y reescribir
 - **Hotkey global** — F9 para iniciar/detener sin salir de la app donde estés
-- **HUD flotante** — panel minimalista con timer, visualizador de voz y botón de stop
+- **HUD flotante** — panel estilo Vercel con timer, visualizador de voz y botón de stop
 - **System tray** — vive en la bandeja del sistema, sin ventanas en el escritorio
 
 ---
@@ -88,7 +89,12 @@ WHISPER_COMPUTE_TYPE=int8
 AUDIO_DEVICE_INDEX=
 
 # Silencio necesario para considerar que terminaste de hablar (ms)
-ENDPOINTING_MS=700
+ENDPOINTING_MS=300
+
+# Mostrar palabras parciales mientras hablas (true) o solo al terminar la frase (false)
+# true  → texto aparece en ~100ms, fluido, recomendado con Deepgram
+# false → texto aparece solo al terminar la frase, más estable (recomendado con Whisper)
+INTERIM_RESULTS=true
 
 # Tecla global para iniciar/detener grabación
 TOGGLE_HOTKEY=<f9>
@@ -105,8 +111,9 @@ TOGGLE_HOTKEY=<f9>
 #### faster-whisper (local)
 - Sin internet, sin API key, sin costo
 - Requiere GPU (NVIDIA) para baja latencia con modelos grandes
-- En CPU funciona bien con el modelo `small`
-- El modelo se descarga automáticamente en el primer uso
+- En CPU funciona bien con el modelo `small` (~1-2s de latencia)
+- El modelo se descarga automáticamente en el primer uso (~460 MB para `small`)
+- Recomendado: `INTERIM_RESULTS=false` y `ENDPOINTING_MS=700`
 
 | Modelo | VRAM | Precisión | Velocidad CPU |
 |---|---|---|---|
