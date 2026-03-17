@@ -1,0 +1,51 @@
+# ── Sensitive / secrets ───────────────────────────────────────────────────
+.env
+
+# ── Python ────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ── Virtual environment ───────────────────────────────────────────────────
+.venv/
+venv/
+env/
+
+# ── IDE / editor ──────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# ── OS ────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── PyInstaller build output ──────────────────────────────────────────────
+*.spec
+*.exe
+*.manifest
+
+# ── Logs ──────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Model cache (faster-whisper / huggingface) ────────────────────────────
+# These are large binary files downloaded at runtime
+models/
+.cache/
+huggingface/
+
+# ── Claude / agents (workspace tooling, not project source) ──────────────
+.claude/
+.agents/
+.mcp.json
+skills-lock.json
