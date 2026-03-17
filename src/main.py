@@ -73,9 +73,9 @@ class S2TApp:
         self._text_proc = TextProcessor()
         self._engine = _make_engine(self._on_transcript)
 
-        # Interim result state — how many chars are currently shown as interim
-        # (need to be backspaced when the next interim or final arrives)
-        self._interim_chars: int = 0
+        # Text currently on-screen as interim (not yet confirmed).
+        # We only type the new suffix each update instead of rewriting everything.
+        self._interim_typed: str = ""
         self._interim_lock = threading.Lock()
         self._capture: AudioCapture | None = None
         self._capture_thread: threading.Thread | None = None
@@ -134,7 +134,7 @@ class S2TApp:
         self._recording = True
         self._text_proc.reset()
         with self._interim_lock:
-            self._interim_chars = 0
+            self._interim_typed = ""
         if self._vad:
             self._vad.reset()
 
@@ -158,6 +158,12 @@ class S2TApp:
     def _stop_recording_locked(self) -> None:
         logger.info("Recording stopped.")
         self._recording = False
+
+        # Erase any interim text still on screen
+        with self._interim_lock:
+            if self._interim_typed:
+                self._keyboard.backspace(len(self._interim_typed))
+                self._interim_typed = ""
 
         # Stop audio first
         if self._capture:
@@ -204,18 +210,36 @@ class S2TApp:
 
         with self._interim_lock:
             if not is_final and config.INTERIM_RESULTS:
-                # Replace previously typed interim text with the updated partial
-                self._keyboard.backspace(self._interim_chars)
-                self._keyboard.type_raw(text)
-                self._interim_chars = len(text)
+                # ── Interim: only type words that are NEW at the end ──────
+                if text.startswith(self._interim_typed):
+                    # Common case: Deepgram added more words — type the suffix
+                    suffix = text[len(self._interim_typed):]
+                    if suffix:
+                        self._keyboard.type_raw(suffix)
+                        self._interim_typed = text
+                else:
+                    # Deepgram corrected an earlier word — full rewrite (rare)
+                    self._keyboard.backspace(len(self._interim_typed))
+                    self._keyboard.type_raw(text)
+                    self._interim_typed = text
 
             elif is_final:
-                # Erase interim text and commit the final result
-                self._keyboard.backspace(self._interim_chars)
-                self._interim_chars = 0
+                # ── Final: commit the result ──────────────────────────────
                 cleaned = self._text_proc.process(text)
-                if cleaned:
-                    self._keyboard.type(cleaned)
+
+                if cleaned is None:
+                    # Duplicate utterance — erase the interim and skip
+                    self._keyboard.backspace(len(self._interim_typed))
+                elif cleaned.startswith(self._interim_typed):
+                    # Final extends what's already on screen — type the rest
+                    suffix = cleaned[len(self._interim_typed):]
+                    self._keyboard.type_raw(suffix + " ")
+                else:
+                    # smart_format changed capitalization/punctuation — correct it
+                    self._keyboard.backspace(len(self._interim_typed))
+                    self._keyboard.type_raw(cleaned + " ")
+
+                self._interim_typed = ""
 
     def _on_speech_start(self) -> None:
         logger.debug("Speech detected.")
