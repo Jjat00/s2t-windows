@@ -1,14 +1,30 @@
 """
 Central configuration — reads from environment / .env file.
 All other modules import from here instead of reading env vars directly.
+
+Works both when running from source and as a PyInstaller frozen .exe.
 """
 import os
+import shutil
+import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load .env from project root (one level above src/)
-_project_root = Path(__file__).parent.parent
-load_dotenv(_project_root / ".env", override=False)
+# When frozen by PyInstaller the .exe lives in the install dir.
+# When running from source the project root is one level above src/.
+if getattr(sys, "frozen", False):
+    _project_root = Path(sys.executable).parent
+else:
+    _project_root = Path(__file__).parent.parent
+
+# First-run: copy .env.example → .env so the app starts without manual setup
+_env_file = _project_root / ".env"
+if not _env_file.exists():
+    _example = _project_root / ".env.example"
+    if _example.exists():
+        shutil.copy(_example, _env_file)
+
+load_dotenv(_env_file, override=False)
 
 # ── STT Engine ──────────────────────────────────────────────────────────────
 ENGINE: str = os.getenv("ENGINE", "whisper").lower()  # "deepgram" | "whisper"

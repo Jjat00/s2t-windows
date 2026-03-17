@@ -1,7 +1,7 @@
-# ── Sensitive / secrets ───────────────────────────────────────────────────
+# Sensitive / secrets
 .env
 
-# ── Python ────────────────────────────────────────────────────────────────
+# Python
 __pycache__/
 *.py[cod]
 *.pyo
@@ -9,42 +9,39 @@ __pycache__/
 *.so
 *.egg
 *.egg-info/
-dist/
-build/
 .eggs/
 
-# ── Virtual environment ───────────────────────────────────────────────────
+# Virtual environment
 .venv/
 venv/
 env/
 
-# ── IDE / editor ──────────────────────────────────────────────────────────
+# IDE / editor
 .vscode/
 .idea/
 *.sublime-project
 *.sublime-workspace
 
-# ── OS ────────────────────────────────────────────────────────────────────
+# OS
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# ── PyInstaller build output ──────────────────────────────────────────────
-*.spec
-*.exe
+# PyInstaller build output (dist/ and build/ contain large binaries)
+dist/
+build/
 *.manifest
 
-# ── Logs ──────────────────────────────────────────────────────────────────
+# Logs
 *.log
 logs/
 
-# ── Model cache (faster-whisper / huggingface) ────────────────────────────
-# These are large binary files downloaded at runtime
+# Model cache (faster-whisper / huggingface — downloaded at runtime)
 models/
 .cache/
 huggingface/
 
-# ── Claude / agents (workspace tooling, not project source) ──────────────
+# Claude / agents workspace tooling
 .claude/
 .agents/
 .mcp.json
