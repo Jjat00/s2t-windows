@@ -3,23 +3,14 @@ Types transcribed text at the current cursor position using pynput.
 
 pynput.keyboard.Controller.type() sends synthetic keystrokes to whatever
 window currently has focus — i.e., wherever the user's cursor is positioned.
-
-Usage:
-    emitter = KeyboardEmitter()
-    emitter.type("Hello, world!")
 """
 from __future__ import annotations
 
 import logging
-import time
 
-from pynput.keyboard import Controller
+from pynput.keyboard import Controller, Key
 
 logger = logging.getLogger(__name__)
-
-# Small delay between typing the text and the next operation.
-# Helps some apps (like browsers) catch up with synthetic input.
-_TYPE_DELAY_MS = 0
 
 
 class KeyboardEmitter:
@@ -29,15 +20,24 @@ class KeyboardEmitter:
         self._keyboard = Controller()
 
     def type(self, text: str) -> None:
-        """
-        Type `text` followed by a space (natural dictation behaviour).
-        Thread-safe: pynput Controller is thread-safe on Windows.
-        """
+        """Type text followed by a space (committed final result)."""
         if not text:
             return
-        # Append a trailing space so successive words are separated automatically
-        output = text + " "
-        logger.debug("Typing: %r", output)
-        self._keyboard.type(output)
-        if _TYPE_DELAY_MS:
-            time.sleep(_TYPE_DELAY_MS / 1000)
+        logger.debug("Typing final: %r", text)
+        self._keyboard.type(text + " ")
+
+    def type_raw(self, text: str) -> None:
+        """Type text with no trailing space (interim / partial result)."""
+        if not text:
+            return
+        logger.debug("Typing interim: %r", text)
+        self._keyboard.type(text)
+
+    def backspace(self, n: int) -> None:
+        """Delete the last n characters by sending n backspace keystrokes."""
+        if n <= 0:
+            return
+        logger.debug("Backspace x%d", n)
+        for _ in range(n):
+            self._keyboard.press(Key.backspace)
+            self._keyboard.release(Key.backspace)

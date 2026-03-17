@@ -41,6 +41,11 @@ LANGUAGE: str = os.getenv("LANGUAGE", "es")
 # ── Hotkey ───────────────────────────────────────────────────────────────────
 TOGGLE_HOTKEY: str = os.getenv("TOGGLE_HOTKEY", "<f9>")
 
+# ── Interim results (Deepgram only) ─────────────────────────────────────────
+# Type partial results in real-time and replace with final on completion.
+# Set to false to only type confirmed final results (higher latency, more stable).
+INTERIM_RESULTS: bool = os.getenv("INTERIM_RESULTS", "true").lower() == "true"
+
 # ── Deduplication ────────────────────────────────────────────────────────────
 # How many characters of previously typed text to check for overlap
 DEDUP_LOOKBACK_CHARS: int = 120

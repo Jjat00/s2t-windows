@@ -72,6 +72,11 @@ class S2TApp:
         self._keyboard = KeyboardEmitter()
         self._text_proc = TextProcessor()
         self._engine = _make_engine(self._on_transcript)
+
+        # Interim result state — how many chars are currently shown as interim
+        # (need to be backspaced when the next interim or final arrives)
+        self._interim_chars: int = 0
+        self._interim_lock = threading.Lock()
         self._capture: AudioCapture | None = None
         self._capture_thread: threading.Thread | None = None
         self._rec_window: RecordingWindow | None = None
@@ -128,6 +133,8 @@ class S2TApp:
         logger.info("Recording started.")
         self._recording = True
         self._text_proc.reset()
+        with self._interim_lock:
+            self._interim_chars = 0
         if self._vad:
             self._vad.reset()
 
@@ -191,11 +198,24 @@ class S2TApp:
             logger.exception("Error in audio loop")
 
     def _on_transcript(self, text: str, is_final: bool) -> None:
-        if not is_final:
-            return  # only type final results
-        cleaned = self._text_proc.process(text)
-        if cleaned:
-            self._keyboard.type(cleaned)
+        text = text.strip()
+        if not text:
+            return
+
+        with self._interim_lock:
+            if not is_final and config.INTERIM_RESULTS:
+                # Replace previously typed interim text with the updated partial
+                self._keyboard.backspace(self._interim_chars)
+                self._keyboard.type_raw(text)
+                self._interim_chars = len(text)
+
+            elif is_final:
+                # Erase interim text and commit the final result
+                self._keyboard.backspace(self._interim_chars)
+                self._interim_chars = 0
+                cleaned = self._text_proc.process(text)
+                if cleaned:
+                    self._keyboard.type(cleaned)
 
     def _on_speech_start(self) -> None:
         logger.debug("Speech detected.")
