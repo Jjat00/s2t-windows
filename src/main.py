@@ -42,8 +42,17 @@ logger = logging.getLogger(__name__)
 
 # ── Engine factory ──────────────────────────────────────────────────────────
 
+def _resolve_engine() -> str:
+    """Resolve ENGINE=auto to a concrete engine name."""
+    engine = config.ENGINE
+    if engine == "auto":
+        engine = "deepgram" if config.DEEPGRAM_API_KEY else "whisper"
+    return engine
+
+
 def _make_engine(on_transcript: Callable[[str, bool], None]):
-    if config.ENGINE == "deepgram":
+    engine = _resolve_engine()
+    if engine == "deepgram":
         from src.stt.deepgram_engine import DeepgramEngine
         return DeepgramEngine(on_transcript)
     else:
@@ -71,6 +80,7 @@ class S2TApp:
 
         self._keyboard = KeyboardEmitter()
         self._text_proc = TextProcessor()
+        self._active_engine = _resolve_engine()
         self._engine = _make_engine(self._on_transcript)
 
         # Text currently on-screen as interim (not yet confirmed).
@@ -83,7 +93,7 @@ class S2TApp:
 
         # VAD is only used with Whisper (Deepgram has built-in endpointing)
         self._vad = None
-        if config.ENGINE != "deepgram":
+        if self._active_engine != "deepgram":
             from src.vad import VADProcessor
             self._vad = VADProcessor(
                 on_speech_end=self._engine.stream_audio,
@@ -101,7 +111,7 @@ class S2TApp:
     # ── public ────────────────────────────────────────────────────────────
 
     def run(self) -> None:
-        logger.info("S2T starting (engine=%s)", config.ENGINE)
+        logger.info("S2T starting (engine=%s)", self._active_engine)
         self._engine.start()
         self._hotkeys.start()
         logger.info(

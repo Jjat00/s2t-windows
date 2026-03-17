@@ -4,6 +4,7 @@ PyInstaller spec for S2T.
 Build: uv run pyinstaller s2t.spec
 Output: dist/S2T/S2T.exe  (onedir — faster startup, better for an installer)
 """
+from PyInstaller.utils.hooks import collect_data_files
 
 block_cipher = None
 
@@ -12,8 +13,10 @@ a = Analysis(
     pathex=["."],
     binaries=[],
     datas=[
-        ("assets",      "assets"),       # icon.ico
-        (".env.example", "."),           # default config template
+        ("assets",        "assets"),      # icon.ico, etc.
+        ("assets/models", "models"),      # bundled Whisper model
+        (".env.example",  "."),           # default config template
+        *collect_data_files("silero_vad"),# bundled ONNX model for VAD
     ],
     hiddenimports=[
         # pynput Windows backends

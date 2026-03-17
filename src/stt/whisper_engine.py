@@ -51,6 +51,7 @@ class WhisperEngine(STTEngine):
             config.WHISPER_MODEL,
             device="auto",
             compute_type=config.WHISPER_COMPUTE_TYPE,
+            download_root=config.WHISPER_MODEL_DIR,
         )
         logger.info("faster-whisper model loaded.")
         self._thread = threading.Thread(target=self._worker, daemon=True, name="whisper-worker")

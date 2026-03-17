@@ -50,8 +50,12 @@ def main():
     print("=== Step 1: Generate icon ===")
     run([sys.executable, ROOT / "scripts" / "generate_icon.py"])
 
-    # 2. PyInstaller
-    print("=== Step 2: PyInstaller ===")
+    # 2. Download Whisper model into assets/models/ (bundled in installer)
+    print("=== Step 2: Download Whisper model ===")
+    run([sys.executable, ROOT / "scripts" / "download_models.py"])
+
+    # 3. PyInstaller
+    print("=== Step 3: PyInstaller ===")
     run(
         [sys.executable, "-m", "PyInstaller", "--clean", "--noconfirm", "s2t.spec"],
         cwd=ROOT,
@@ -67,8 +71,8 @@ def main():
         print(f"  {dist_dir / 'S2T.exe'}")
         return
 
-    # 3. Inno Setup
-    print("=== Step 3: Inno Setup ===")
+    # 4. Inno Setup
+    print("=== Step 4: Inno Setup ===")
     iscc = find_inno()
     if not iscc:
         print("Inno Setup not found. Install it from https://jrsoftware.org/isdl.php")
