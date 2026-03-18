@@ -77,6 +77,8 @@ Filename: "taskkill"; Parameters: "/F /IM {#AppExeName}"; \
 [Code]
 // Close running instance before install/uninstall
 procedure CloseRunningInstance();
+var
+  ResultCode: Integer;
 begin
   Exec('taskkill', '/F /IM {#AppExeName}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;

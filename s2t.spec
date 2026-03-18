@@ -24,8 +24,6 @@ a = Analysis(
         "pynput.mouse._win32",
         # pystray Windows backend
         "pystray._win32",
-        # pkg_resources compatibility shim
-        "pkg_resources.py2_compat",
         # deepgram internals
         "deepgram",
         "websockets",
@@ -36,14 +34,13 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        # Test / dev tools — never needed at runtime
+        # Test / dev tools
         "pytest", "unittest", "IPython", "jupyter",
         "matplotlib", "scipy", "pandas",
-        # Torch modules not used by silero-vad inference
-        "torch.testing",
-        "torch.distributions",
-        "torch.utils.tensorboard",
-        "torch.ao",
+        # torch is no longer used (VAD uses onnxruntime directly, Whisper uses ctranslate2)
+        "torch",
+        "torchaudio",
+        "torchvision",
         "caffe2",
     ],
     win_no_prefer_redirects=False,
