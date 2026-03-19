@@ -206,9 +206,10 @@ class S2TApp:
             return
 
         if not is_final:
-            # Show interim result in HUD only — never touch the active document
+            # Show interim result in HUD only (with emoji preview)
+            from src.emoji_map import replace_emojis
             if self._rec_window:
-                self._rec_window.push_text(text)
+                self._rec_window.push_text(replace_emojis(text))
         else:
             # Final result: clear HUD preview and type into the active document
             if self._rec_window:

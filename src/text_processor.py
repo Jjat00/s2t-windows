@@ -18,6 +18,7 @@ import logging
 import re
 
 from src import config
+from src.emoji_map import replace_emojis
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +73,8 @@ class TextProcessor:
         text = _normalize(raw_text)
         if not text:
             return None
+
+        text = replace_emojis(text)
 
         if self._is_duplicate(text):
             logger.debug("Dedup: suppressed %r", text)

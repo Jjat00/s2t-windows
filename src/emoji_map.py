@@ -1,0 +1,201 @@
+"""
+Emoji replacement map.
+
+Maps spoken names (after the trigger word "emoji") to Unicode emoji.
+Supports Spanish and English names. Case-insensitive matching.
+"""
+import re
+
+# trigger word(s) that precede the emoji name
+_TRIGGERS = ("emoji",)
+
+# name → emoji (lowercase keys)
+_EMOJIS: dict[str, str] = {
+    # ── caras / faces ─────────────────────────────────────────────────
+    "sonrisa":          "😊",
+    "smile":            "😊",
+    "risa":             "😂",
+    "laugh":            "😂",
+    "carcajada":        "🤣",
+    "guiño":            "😉",
+    "wink":             "😉",
+    "amor":             "😍",
+    "love face":        "😍",
+    "beso":             "😘",
+    "kiss":             "😘",
+    "lengua":           "😜",
+    "tongue":           "😜",
+    "cool":             "😎",
+    "gafas":            "😎",
+    "triste":           "😢",
+    "sad":              "😢",
+    "llorar":           "😭",
+    "cry":              "😭",
+    "enojado":          "😠",
+    "angry":            "😠",
+    "sorprendido":      "😮",
+    "surprised":        "😮",
+    "pensando":         "🤔",
+    "thinking":         "🤔",
+    "mente volada":     "🤯",
+    "mind blown":       "🤯",
+    "payaso":           "🤡",
+    "clown":            "🤡",
+    "fantasma":         "👻",
+    "ghost":            "👻",
+    "calavera":         "💀",
+    "skull":            "💀",
+    "robot":            "🤖",
+    "nerd":             "🤓",
+    "enfermo":          "🤒",
+    "sick":             "🤒",
+    "dormir":           "😴",
+    "sleep":            "😴",
+    "silencio":         "🤫",
+    "shush":            "🤫",
+
+    # ── gestos / gestures ─────────────────────────────────────────────
+    "pulgar arriba":    "👍",
+    "thumbs up":        "👍",
+    "like":             "👍",
+    "pulgar abajo":     "👎",
+    "thumbs down":      "👎",
+    "dislike":          "👎",
+    "ok":               "👌",
+    "aplausos":         "👏",
+    "clap":             "👏",
+    "manos arriba":     "🙌",
+    "puño":             "✊",
+    "fist":             "✊",
+    "paz":              "✌️",
+    "peace":            "✌️",
+    "rock":             "🤘",
+    "ola":              "👋",
+    "wave":             "👋",
+    "dedo":             "👆",
+    "point":            "👆",
+    "rezar":            "🙏",
+    "pray":             "🙏",
+    "gracias":          "🙏",
+    "thanks":           "🙏",
+    "abrazo":           "🤗",
+    "hug":              "🤗",
+    "músculo":          "💪",
+    "muscle":           "💪",
+    "fuerte":           "💪",
+    "strong":           "💪",
+
+    # ── corazones / hearts ────────────────────────────────────────────
+    "corazón":          "❤️",
+    "heart":            "❤️",
+    "corazón roto":     "💔",
+    "broken heart":     "💔",
+    "fuego corazón":    "❤️‍🔥",
+
+    # ── objetos / objects ─────────────────────────────────────────────
+    "fuego":            "🔥",
+    "fire":             "🔥",
+    "estrella":         "⭐",
+    "star":             "⭐",
+    "rayo":             "⚡",
+    "lightning":        "⚡",
+    "sol":              "☀️",
+    "sun":              "☀️",
+    "luna":             "🌙",
+    "moon":             "🌙",
+    "arcoíris":         "🌈",
+    "rainbow":          "🌈",
+    "fiesta":           "🎉",
+    "party":            "🎉",
+    "celebrar":         "🎉",
+    "celebrate":        "🎉",
+    "regalo":           "🎁",
+    "gift":             "🎁",
+    "música":           "🎵",
+    "music":            "🎵",
+    "café":             "☕",
+    "coffee":           "☕",
+    "cerveza":          "🍺",
+    "beer":             "🍺",
+    "pizza":            "🍕",
+    "taco":             "🌮",
+    "cohete":           "🚀",
+    "rocket":           "🚀",
+    "avión":            "✈️",
+    "plane":            "✈️",
+    "dinero":           "💰",
+    "money":            "💰",
+    "bomba":            "💣",
+    "bomb":             "💣",
+    "corona":           "👑",
+    "crown":            "👑",
+    "diamante":         "💎",
+    "diamond":          "💎",
+    "reloj":            "⏰",
+    "clock":            "⏰",
+    "llave":            "🔑",
+    "key":              "🔑",
+    "candado":          "🔒",
+    "lock":             "🔒",
+    "libro":            "📖",
+    "book":             "📖",
+    "computadora":      "💻",
+    "computer":         "💻",
+    "teléfono":         "📱",
+    "phone":            "📱",
+    "cámara":           "📷",
+    "camera":           "📷",
+    "foco":             "💡",
+    "lightbulb":        "💡",
+    "idea":             "💡",
+
+    # ── check / symbols ───────────────────────────────────────────────
+    "check":            "✅",
+    "palomita":         "✅",
+    "equis":            "❌",
+    "x":                "❌",
+    "alerta":           "⚠️",
+    "warning":          "⚠️",
+    "pregunta":         "❓",
+    "question":         "❓",
+    "exclamación":      "❗",
+    "exclamation":      "❗",
+    "100":              "💯",
+    "cien":             "💯",
+    "infinito":         "♾️",
+    "infinity":         "♾️",
+
+    # ── animales / animals ────────────────────────────────────────────
+    "perro":            "🐶",
+    "dog":              "🐶",
+    "gato":             "🐱",
+    "cat":              "🐱",
+    "unicornio":        "🦄",
+    "unicorn":          "🦄",
+    "mariposa":         "🦋",
+    "butterfly":        "🦋",
+    "abeja":            "🐝",
+    "bee":              "🐝",
+    "tiburón":          "🦈",
+    "shark":            "🦈",
+    "mono":             "🐵",
+    "monkey":           "🐵",
+    "serpiente":        "🐍",
+    "snake":            "🐍",
+}
+
+# Build regex: "emoji <name>" where <name> is any key (longest first to avoid partial matches)
+_sorted_names = sorted(_EMOJIS.keys(), key=len, reverse=True)
+_name_pattern = "|".join(re.escape(n) for n in _sorted_names)
+_PATTERN = re.compile(
+    rf"\b(?:{'|'.join(_TRIGGERS)})\s+({_name_pattern})\b",
+    re.IGNORECASE,
+)
+
+
+def replace_emojis(text: str) -> str:
+    """Replace 'emoji <name>' patterns with the corresponding Unicode emoji."""
+    def _sub(m: re.Match) -> str:
+        name = m.group(1).lower()
+        return _EMOJIS.get(name, m.group(0))
+    return _PATTERN.sub(_sub, text)
