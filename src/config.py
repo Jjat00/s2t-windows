@@ -56,11 +56,11 @@ CHANNELS: int    = 1
 CHUNK_SIZE: int  = 1024
 
 # ── VAD / endpointing ─────────────────────────────────────────────────────────
-ENDPOINTING_MS: int  = int(os.getenv("ENDPOINTING_MS", "300"))
+ENDPOINTING_MS: int  = int(os.getenv("ENDPOINTING_MS", "500"))
 VAD_THRESHOLD: float = 0.5
 
 # ── Idioma ────────────────────────────────────────────────────────────────────
-LANGUAGE: str = os.getenv("LANGUAGE", "es")
+LANGUAGE: str = os.getenv("LANGUAGE", "multi")
 
 # ── Hotkey ────────────────────────────────────────────────────────────────────
 TOGGLE_HOTKEY: str = os.getenv("TOGGLE_HOTKEY", "<f9>")

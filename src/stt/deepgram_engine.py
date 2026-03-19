@@ -103,9 +103,10 @@ class DeepgramEngine(STTEngine):
     # ── private ────────────────────────────────────────────────────────────
 
     def _ws_loop(self) -> None:
-        lang = "multi" if config.LANGUAGE == "auto" else config.LANGUAGE
+        # "auto" and "multi" both map to Deepgram's multilingual mode (es + en + more)
+        lang = "multi" if config.LANGUAGE in ("auto", "multi") else config.LANGUAGE
         connect_params = dict(
-            model="nova-2",
+            model="nova-3",
             language=lang,
             encoding="linear16",
             sample_rate=str(config.SAMPLE_RATE),
