@@ -62,8 +62,9 @@ VAD_THRESHOLD: float = 0.5
 # ── Idioma ────────────────────────────────────────────────────────────────────
 LANGUAGE: str = os.getenv("LANGUAGE", "multi")
 
-# ── Hotkey ────────────────────────────────────────────────────────────────────
-TOGGLE_HOTKEY: str = os.getenv("TOGGLE_HOTKEY", "<f9>")
+# ── Push-to-talk key ──────────────────────────────────────────────────────────
+# pynput Key name: ctrl_r, ctrl_l, alt_r, caps_lock, f13 ...
+PTT_KEY: str = os.getenv("PTT_KEY", "f9")
 
 # ── Resultados parciales (solo Deepgram) ──────────────────────────────────────
 INTERIM_RESULTS: bool = os.getenv("INTERIM_RESULTS", "true").lower() == "true"

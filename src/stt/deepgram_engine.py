@@ -111,7 +111,7 @@ class DeepgramEngine(STTEngine):
             encoding="linear16",
             sample_rate=str(config.SAMPLE_RATE),
             channels=str(config.CHANNELS),
-            interim_results="true",
+            interim_results="true" if config.INTERIM_RESULTS else "false",
             smart_format="true",
             endpointing=str(config.ENDPOINTING_MS),
         )
@@ -125,8 +125,10 @@ class DeepgramEngine(STTEngine):
                 )
                 reader.start()
 
-                # Sender loop — drains audio queue into WebSocket
-                while not self._stop_flag.is_set():
+                # Sender loop — drains ALL audio until sentinel.
+                # Must NOT exit on stop_flag alone: audio captured just before
+                # disconnect() would be lost, cutting off the last words.
+                while True:
                     try:
                         chunk = self._audio_queue.get(timeout=0.1)
                     except queue.Empty:
@@ -149,10 +151,13 @@ class DeepgramEngine(STTEngine):
             self._connected.set()  # unblock connect() on failure
 
     def _read_loop(self, ws: V1SocketClient) -> None:
+        """Process ALL messages until Deepgram closes the connection.
+
+        Do NOT break early on _stop_flag — we need to receive the final
+        transcript that Deepgram sends after send_close_stream().
+        """
         try:
             for msg in ws:
-                if self._stop_flag.is_set():
-                    break
                 if isinstance(msg, ListenV1Results):
                     self._handle_result(msg)
         except Exception:

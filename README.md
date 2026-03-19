@@ -6,14 +6,14 @@ Aplicación de escritorio para Windows que captura audio del micrófono en tiemp
 
 ## Características
 
-- **Dictado fluido en tiempo real** — las palabras aparecen mientras hablas (~100ms con Deepgram), sin esperar a terminar la frase
+- **Push-to-talk** — mantén **F9** presionado para grabar, suelta para escribir
+- **Preview en tiempo real** — las palabras aparecen en el HUD mientras hablas, sin tocar el documento
+- **Resultado limpio** — al soltar F9, Deepgram escribe la versión final corregida (sin residuos ni palabras incompletas)
 - **Escribe donde esté el cursor** — funciona en cualquier aplicación (VS Code, Word, Notion, Chrome, etc.)
-- **Multiidioma** — español, inglés, francés, portugués y más, configurable en `.env`
-- **Dos motores** — Deepgram (cloud, ~100ms) o faster-whisper (local, sin internet)
+- **Bilingüe** — español + inglés simultáneo con Deepgram Nova-3 (`LANGUAGE=multi`)
+- **Dos motores** — Deepgram (cloud, baja latencia) o faster-whisper (local, sin internet)
 - **Sin duplicados** — deduplicación por similitud para evitar frases repetidas
-- **Sin parpadeo** — los resultados parciales se extienden palabra por palabra, sin borrar y reescribir
-- **Hotkey global** — F9 para iniciar/detener sin salir de la app donde estés
-- **HUD flotante** — panel estilo Vercel con timer, visualizador de voz y botón de stop
+- **HUD flotante** — panel estilo Vercel con timer, preview de transcripción, visualizador de voz y botón Stop
 - **System tray** — vive en la bandeja del sistema, sin ventanas en el escritorio
 
 ---
@@ -25,9 +25,9 @@ Aplicación de escritorio para Windows que captura audio del micrófono en tiemp
 | **Lenguaje** | Python 3.12 | Mejor ecosistema para audio e IA |
 | **Gestión de deps** | [uv](https://github.com/astral-sh/uv) | Instalación rápida, versiones exactas |
 | **Captura de audio** | PyAudio | Streaming de micrófono en tiempo real |
-| **STT cloud** | [Deepgram Nova-2](https://deepgram.com) | WebSocket nativo, ~300ms, VAD integrado |
+| **STT cloud** | [Deepgram Nova-3](https://deepgram.com) | WebSocket nativo, baja latencia, multilingüe |
 | **STT local** | [faster-whisper](https://github.com/SYSTRAN/faster-whisper) | Whisper 4× más rápido, funciona offline |
-| **VAD** | [silero-vad](https://github.com/snakers4/silero-vad) | Detección de pausas precisa (modo local) |
+| **VAD** | [silero-vad](https://github.com/snakers4/silero-vad) ONNX | Detección de pausas (modo local, sin PyTorch) |
 | **Teclado** | pynput | Escribe en la ventana activa, soporta Unicode |
 | **System tray** | pystray + Pillow | Icono en bandeja sin frameworks pesados |
 | **UI** | tkinter | HUD flotante y diálogo de configuración |
@@ -65,47 +65,46 @@ cp .env.example .env
 Edita el archivo `.env` con tus valores:
 
 ```env
-# Motor de transcripción: "deepgram" (cloud) o "whisper" (local)
-ENGINE=deepgram
+# Motor: "auto" (Deepgram si hay API key, Whisper si no), "deepgram" o "whisper"
+ENGINE=auto
 
-# API Key de Deepgram (solo necesaria si ENGINE=deepgram)
+# API Key de Deepgram — opcional, solo necesaria si ENGINE=deepgram o auto con key
 # Obtén la tuya en https://console.deepgram.com
-DEEPGRAM_API_KEY=tu_api_key_aqui
+DEEPGRAM_API_KEY=
 
-# Idioma de transcripción (BCP-47 o "auto")
-# Ejemplos: es, es-419, en-US, fr, pt, de
-LANGUAGE=es
+# Idioma de transcripción
+# multi  = español + inglés simultáneo (recomendado con Deepgram Nova-3)
+# es     = solo español
+# en-US  = solo inglés
+# auto   = igual que multi (Deepgram) o auto-detect (Whisper)
+LANGUAGE=multi
 
 # Tamaño del modelo Whisper (solo si ENGINE=whisper)
 # tiny | base | small | medium | large-v3
-# Más grande = más preciso pero más lento y más RAM/VRAM
 WHISPER_MODEL=small
 
 # Tipo de cómputo para Whisper
-# int8 (CPU, rápido) | float16 (GPU) | float32
+# int8 (CPU) | float16 (GPU) | float32
 WHISPER_COMPUTE_TYPE=int8
 
 # Índice del micrófono (dejar vacío para el predeterminado)
 AUDIO_DEVICE_INDEX=
 
-# Silencio necesario para considerar que terminaste de hablar (ms)
-ENDPOINTING_MS=300
+# Silencio necesario para cerrar una utterance (ms)
+# 500 = natural, reduce cortes de palabras al final
+ENDPOINTING_MS=500
 
-# Mostrar palabras parciales mientras hablas (true) o solo al terminar la frase (false)
-# true  → texto aparece en ~100ms, fluido, recomendado con Deepgram
-# false → texto aparece solo al terminar la frase, más estable (recomendado con Whisper)
-INTERIM_RESULTS=true
-
-# Tecla global para iniciar/detener grabación
-TOGGLE_HOTKEY=<f9>
+# Tecla push-to-talk: mantener presionada para grabar
+# f9 = F9 (recomendado — sin conflictos con atajos del sistema)
+PTT_KEY=f9
 ```
 
 ### Motores disponibles
 
-#### Deepgram (recomendado)
+#### Deepgram Nova-3 (recomendado)
 - Requiere internet y API key
-- Latencia ~300ms, precisión excelente
-- VAD y detección de pausas integrados
+- Baja latencia, precisión excelente en español + inglés simultáneo
+- Preview en tiempo real en el HUD, resultado final limpio al soltar F9
 - Precio: ~$0.004/min (tiene free tier generoso)
 
 #### faster-whisper (local)
@@ -113,7 +112,6 @@ TOGGLE_HOTKEY=<f9>
 - Requiere GPU (NVIDIA) para baja latencia con modelos grandes
 - En CPU funciona bien con el modelo `small` (~1-2s de latencia)
 - El modelo se descarga automáticamente en el primer uso (~460 MB para `small`)
-- Recomendado: `INTERIM_RESULTS=false` y `ENDPOINTING_MS=700`
 
 | Modelo | VRAM | Precisión | Velocidad CPU |
 |---|---|---|---|
@@ -130,15 +128,10 @@ TOGGLE_HOTKEY=<f9>
 uv run python src/main.py
 ```
 
-- Aparece un icono en la **bandeja del sistema**
-- Presiona **F9** para iniciar la grabación
-- Habla — el texto se escribe donde esté el cursor
-- Presiona **F9** de nuevo o el botón **Stop** del HUD para detener
-- Click derecho en el icono de la bandeja para acceder a **Settings** y **Exit**
-
-### Configuración desde la UI
-
-Click derecho en el icono → **Settings** para cambiar idioma, motor, micrófono y más sin editar el `.env` manualmente. Los cambios aplican al reiniciar.
+1. Aparece un icono en la **bandeja del sistema**
+2. **Mantén F9 presionado** para grabar — el HUD aparece con el preview de lo que dices
+3. **Suelta F9** — el texto final se escribe donde esté el cursor
+4. Click derecho en el icono de la bandeja → **Settings** para cambiar idioma, motor y más
 
 ---
 
@@ -150,22 +143,27 @@ s2t/
 │   ├── main.py              # Orquestador principal y punto de entrada
 │   ├── config.py            # Configuración centralizada (lee .env)
 │   ├── audio_capture.py     # Captura de micrófono con PyAudio
-│   ├── vad.py               # Detección de voz con silero-vad
+│   ├── vad.py               # VAD con silero-vad ONNX (sin PyTorch)
 │   ├── text_processor.py    # Deduplicación y limpieza de texto
 │   ├── keyboard_emitter.py  # Escritura de texto con pynput
-│   ├── hotkeys.py           # Hotkey global (F9)
+│   ├── hotkeys.py           # Push-to-talk (F9 por defecto)
 │   ├── tray_app.py          # Icono en bandeja del sistema
 │   ├── stt/
-│   │   ├── base.py          # Interfaz abstracta STTEngine
-│   │   ├── deepgram_engine.py  # Motor Deepgram (WebSocket)
-│   │   └── whisper_engine.py   # Motor faster-whisper (local)
+│   │   ├── base.py              # Interfaz abstracta STTEngine
+│   │   ├── deepgram_engine.py   # Motor Deepgram Nova-3 (WebSocket)
+│   │   └── whisper_engine.py    # Motor faster-whisper (local)
 │   └── ui/
-│       ├── recording_window.py  # HUD flotante (timer + waveform + stop)
+│       ├── recording_window.py  # HUD flotante (timer + preview + waveform)
 │       └── settings_window.py   # Diálogo de configuración
 ├── assets/
 │   └── icon.ico             # Icono de la bandeja
 ├── scripts/
-│   └── generate_icon.py     # Script para regenerar el icono
+│   ├── build.py             # Build completo (icono + modelo + PyInstaller + Inno Setup)
+│   ├── download_models.py   # Pre-descarga modelo Whisper para el instalador
+│   └── generate_icon.py     # Regenera el icono
+├── installer/
+│   └── setup.iss            # Script de Inno Setup 6
+├── s2t.spec                 # Configuración de PyInstaller
 ├── .env.example             # Plantilla de configuración
 ├── pyproject.toml           # Definición del proyecto
 └── uv.lock                  # Versiones exactas de dependencias

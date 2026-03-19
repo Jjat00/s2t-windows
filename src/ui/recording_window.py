@@ -4,6 +4,7 @@ Floating recording HUD — Vercel-style design.
 Borderless, draggable panel with:
   - Elapsed timer
   - Live waveform that reacts to microphone volume
+  - Live transcription preview (interim results — not typed, just shown)
   - Stop button
 
 Runs in its own daemon thread (separate tkinter event loop).
@@ -19,22 +20,24 @@ from typing import Callable
 import tkinter as tk
 
 # ── palette (Vercel dark) ──────────────────────────────────────────────────
-_BG       = "#000000"   # window background
-_SURFACE  = "#0a0a0a"   # waveform bg
-_BORDER   = "#1f1f1f"   # outer border frame
-_TEXT     = "#ededed"   # primary text
-_MUTED    = "#666666"   # secondary text
-_DOT_ON   = "#ff4444"   # recording indicator on
-_DOT_OFF  = "#2a0a0a"   # recording indicator off (blink)
-_BTN_BG   = "#ededed"   # stop button (light on dark — Vercel primary)
+_BG       = "#000000"
+_SURFACE  = "#0a0a0a"
+_BORDER   = "#1f1f1f"
+_TEXT     = "#ededed"
+_MUTED    = "#666666"
+_PREVIEW  = "#999999"   # interim text — slightly brighter than muted
+_DOT_ON   = "#ff4444"
+_DOT_OFF  = "#2a0a0a"
+_BTN_BG   = "#ededed"
 _BTN_FG   = "#000000"
-_BTN_HOV  = "#c8c8c8"   # hover (simulated on enter/leave)
+_BTN_HOV  = "#c8c8c8"
 
 _FONT     = "Segoe UI"
 _MONO     = "Consolas"
 
 _BAR_COUNT = 52
 _UPDATE_MS = 35   # ~28 fps
+_MAX_PREVIEW_CHARS = 72
 
 
 class RecordingWindow:
@@ -42,13 +45,13 @@ class RecordingWindow:
 
     def __init__(self, on_stop: Callable[[], None]) -> None:
         self._on_stop = on_stop
-        self._amp_queue: queue.Queue[float] = queue.Queue(maxsize=300)
+        self._amp_queue:  queue.Queue[float] = queue.Queue(maxsize=300)
+        self._text_queue: queue.Queue[str]   = queue.Queue(maxsize=50)
         self._amplitudes: deque[float] = deque([0.0] * _BAR_COUNT, maxlen=_BAR_COUNT)
         self._start_time: float = 0.0
         self._root: tk.Tk | None = None
         self._thread: threading.Thread | None = None
         self._alive = False
-        # drag state
         self._drag_x = 0
         self._drag_y = 0
 
@@ -74,33 +77,39 @@ class RecordingWindow:
         except queue.Full:
             pass
 
+    def push_text(self, text: str) -> None:
+        """Update the live transcription preview (call from any thread)."""
+        try:
+            # Drain old pending updates — only the latest matters
+            while not self._text_queue.empty():
+                self._text_queue.get_nowait()
+            self._text_queue.put_nowait(text)
+        except queue.Empty:
+            pass
+
     # ── window ────────────────────────────────────────────────────────────
 
     def _run(self) -> None:
         root = tk.Tk()
         self._root = root
 
-        # Borderless
         root.overrideredirect(True)
         root.configure(bg=_BORDER)
         root.attributes("-topmost", True)
 
-        # Size and position (bottom-centre, above taskbar)
-        W, H = 380, 130
+        W, H = 420, 160
         sw = root.winfo_screenwidth()
         sh = root.winfo_screenheight()
         root.geometry(f"{W}x{H}+{(sw - W) // 2}+{sh - H - 60}")
 
-        # Inner content frame (1 px border via outer bg)
         inner = tk.Frame(root, bg=_BG, padx=0, pady=0)
         inner.pack(fill="both", expand=True, padx=1, pady=1)
 
         self._build_widgets(inner)
 
-        # Drag bindings on whole window
         for w in (root, inner):
-            w.bind("<ButtonPress-1>",   self._drag_start)
-            w.bind("<B1-Motion>",       self._drag_move)
+            w.bind("<ButtonPress-1>", self._drag_start)
+            w.bind("<B1-Motion>",     self._drag_move)
 
         root.after(_UPDATE_MS, self._tick)
         root.mainloop()
@@ -113,18 +122,13 @@ class RecordingWindow:
         self._dot = tk.Label(top, text="●", font=(_FONT, 10), fg=_DOT_ON, bg=_BG)
         self._dot.pack(side="left")
 
-        tk.Label(
-            top, text="  Recording",
-            font=(_FONT, 11), fg=_MUTED, bg=_BG,
-        ).pack(side="left")
+        tk.Label(top, text="  Recording",
+                 font=(_FONT, 11), fg=_MUTED, bg=_BG).pack(side="left")
 
-        self._timer = tk.Label(
-            top, text="00:00",
-            font=(_MONO, 13, "bold"), fg=_TEXT, bg=_BG,
-        )
+        self._timer = tk.Label(top, text="00:00",
+                               font=(_MONO, 13, "bold"), fg=_TEXT, bg=_BG)
         self._timer.pack(side="right")
 
-        # Drag on top bar labels too
         for w in top.winfo_children():
             w.bind("<ButtonPress-1>", self._drag_start)
             w.bind("<B1-Motion>",     self._drag_move)
@@ -135,39 +139,38 @@ class RecordingWindow:
         canvas_frame = tk.Frame(parent, bg=_BG)
         canvas_frame.pack(fill="x", padx=16, pady=(8, 0))
 
-        self._canvas = tk.Canvas(
-            canvas_frame, bg=_SURFACE, height=44,
-            highlightthickness=0,
-        )
+        self._canvas = tk.Canvas(canvas_frame, bg=_SURFACE, height=40,
+                                 highlightthickness=0)
         self._canvas.pack(fill="x")
 
-        # ── row 3: bottom bar (lang + stop) ─────────────────────────────
-        bot = tk.Frame(parent, bg=_BG)
-        bot.pack(fill="x", padx=16, pady=(8, 12))
-
-        # Language pill
-        from src import config as _cfg
-        lang_text = _cfg.LANGUAGE.upper()
-        lang_pill = tk.Label(
-            bot, text=lang_text,
-            font=(_MONO, 8), fg=_MUTED, bg="#111111",
-            padx=6, pady=2,
+        # ── row 3: live transcription preview ────────────────────────────
+        self._preview_var = tk.StringVar(value="")
+        self._preview_label = tk.Label(
+            parent,
+            textvariable=self._preview_var,
+            font=(_FONT, 9),
+            fg=_PREVIEW,
+            bg=_BG,
+            anchor="w",
+            justify="left",
         )
-        lang_pill.pack(side="left")
+        self._preview_label.pack(fill="x", padx=16, pady=(6, 0))
 
-        # Stop button
+        # ── row 4: lang pill + stop button ──────────────────────────────
+        bot = tk.Frame(parent, bg=_BG)
+        bot.pack(fill="x", padx=16, pady=(6, 10))
+
+        from src import config as _cfg
+        tk.Label(bot, text=_cfg.LANGUAGE.upper(),
+                 font=(_MONO, 8), fg=_MUTED, bg="#111111",
+                 padx=6, pady=2).pack(side="left")
+
         self._stop_btn = tk.Button(
-            bot,
-            text="Stop",
+            bot, text="Stop",
             font=(_FONT, 9, "bold"),
-            fg=_BTN_FG,
-            bg=_BTN_BG,
-            activebackground=_BTN_HOV,
-            activeforeground=_BTN_FG,
-            relief="flat",
-            padx=14,
-            pady=4,
-            cursor="hand2",
+            fg=_BTN_FG, bg=_BTN_BG,
+            activebackground=_BTN_HOV, activeforeground=_BTN_FG,
+            relief="flat", padx=14, pady=4, cursor="hand2",
             command=self._on_stop_clicked,
         )
         self._stop_btn.pack(side="right")
@@ -187,12 +190,25 @@ class RecordingWindow:
             except queue.Empty:
                 break
 
+        # Drain text queue (latest wins)
+        latest_text: str | None = None
+        while True:
+            try:
+                latest_text = self._text_queue.get_nowait()
+            except queue.Empty:
+                break
+        if latest_text is not None:
+            display = latest_text
+            if len(display) > _MAX_PREVIEW_CHARS:
+                display = "…" + display[-((_MAX_PREVIEW_CHARS - 1)):]
+            self._preview_var.set(display)
+
         # Timer
         elapsed = time.monotonic() - self._start_time
         mins, secs = divmod(int(elapsed), 60)
         self._timer.config(text=f"{mins:02d}:{secs:02d}")
 
-        # Blink dot every 500 ms
+        # Blink dot
         self._dot.config(fg=_DOT_ON if int(elapsed * 2) % 2 == 0 else _DOT_OFF)
 
         self._draw_waveform()
@@ -201,7 +217,6 @@ class RecordingWindow:
     def _draw_waveform(self) -> None:
         c = self._canvas
         c.delete("all")
-
         cw = c.winfo_width()
         ch = c.winfo_height()
         if cw < 4:
@@ -213,19 +228,13 @@ class RecordingWindow:
 
         for i, amp in enumerate(self._amplitudes):
             x = i * bar_w + bar_w / 2
-            # Minimum visible bar height
             bar_h = max(2.0, amp * ch * 0.9)
-
-            # Vercel-style color: low → dim white, loud → bright white
             brightness = int(60 + min(195, amp * 400))
             color = f"#{brightness:02x}{brightness:02x}{brightness:02x}"
-
             half = bar_w * 0.35
-            c.create_rectangle(
-                x - half, cy - bar_h / 2,
-                x + half, cy + bar_h / 2,
-                fill=color, outline="",
-            )
+            c.create_rectangle(x - half, cy - bar_h / 2,
+                                x + half, cy + bar_h / 2,
+                                fill=color, outline="")
 
     # ── drag ─────────────────────────────────────────────────────────────
 

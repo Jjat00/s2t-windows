@@ -82,11 +82,6 @@ class S2TApp:
         self._text_proc = TextProcessor()
         self._active_engine = _resolve_engine()
         self._engine = _make_engine(self._on_transcript)
-
-        # Text currently on-screen as interim (not yet confirmed).
-        # We only type the new suffix each update instead of rewriting everything.
-        self._interim_typed: str = ""
-        self._interim_lock = threading.Lock()
         self._capture: AudioCapture | None = None
         self._capture_thread: threading.Thread | None = None
         self._rec_window: RecordingWindow | None = None
@@ -106,7 +101,10 @@ class S2TApp:
             on_settings=self._open_settings,
             on_exit=self._exit,
         )
-        self._hotkeys = HotkeyManager(on_toggle=self.toggle_recording)
+        self._hotkeys = HotkeyManager(
+            on_start=self.start_recording,
+            on_stop=self.stop_recording,
+        )
 
     # ── public ────────────────────────────────────────────────────────────
 
@@ -114,10 +112,7 @@ class S2TApp:
         logger.info("S2T starting (engine=%s)", self._active_engine)
         self._engine.start()
         self._hotkeys.start()
-        logger.info(
-            "Press %s to toggle recording. Right-click tray icon for menu.",
-            config.TOGGLE_HOTKEY,
-        )
+        logger.info("Hold %s to record. Right-click tray icon for menu.", config.PTT_KEY)
         self._tray.run()  # blocks until exit
 
     def toggle_recording(self) -> None:
@@ -143,8 +138,6 @@ class S2TApp:
         logger.info("Recording started.")
         self._recording = True
         self._text_proc.reset()
-        with self._interim_lock:
-            self._interim_typed = ""
         if self._vad:
             self._vad.reset()
 
@@ -168,12 +161,6 @@ class S2TApp:
     def _stop_recording_locked(self) -> None:
         logger.info("Recording stopped.")
         self._recording = False
-
-        # Erase any interim text still on screen
-        with self._interim_lock:
-            if self._interim_typed:
-                self._keyboard.backspace(len(self._interim_typed))
-                self._interim_typed = ""
 
         # Stop audio first
         if self._capture:
@@ -218,38 +205,17 @@ class S2TApp:
         if not text:
             return
 
-        with self._interim_lock:
-            if not is_final and config.INTERIM_RESULTS:
-                # ── Interim: only type words that are NEW at the end ──────
-                if text.startswith(self._interim_typed):
-                    # Common case: Deepgram added more words — type the suffix
-                    suffix = text[len(self._interim_typed):]
-                    if suffix:
-                        self._keyboard.type_raw(suffix)
-                        self._interim_typed = text
-                else:
-                    # Deepgram corrected an earlier word — full rewrite (rare)
-                    self._keyboard.backspace(len(self._interim_typed))
-                    self._keyboard.type_raw(text)
-                    self._interim_typed = text
-
-            elif is_final:
-                # ── Final: commit the result ──────────────────────────────
-                cleaned = self._text_proc.process(text)
-
-                if cleaned is None:
-                    # Duplicate utterance — erase the interim and skip
-                    self._keyboard.backspace(len(self._interim_typed))
-                elif cleaned.startswith(self._interim_typed):
-                    # Final extends what's already on screen — type the rest
-                    suffix = cleaned[len(self._interim_typed):]
-                    self._keyboard.type_raw(suffix + " ")
-                else:
-                    # smart_format changed capitalization/punctuation — correct it
-                    self._keyboard.backspace(len(self._interim_typed))
-                    self._keyboard.type_raw(cleaned + " ")
-
-                self._interim_typed = ""
+        if not is_final:
+            # Show interim result in HUD only — never touch the active document
+            if self._rec_window:
+                self._rec_window.push_text(text)
+        else:
+            # Final result: clear HUD preview and type into the active document
+            if self._rec_window:
+                self._rec_window.push_text("")
+            cleaned = self._text_proc.process(text)
+            if cleaned:
+                self._keyboard.type_raw(cleaned + " ")
 
     def _on_speech_start(self) -> None:
         logger.debug("Speech detected.")
