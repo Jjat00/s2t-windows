@@ -1,13 +1,8 @@
 """
-Floating recording HUD — Vercel-style design.
+Floating recording HUD — minimal glass pill.
 
-Borderless, draggable panel with:
-  - Elapsed timer
-  - Live waveform that reacts to microphone volume
-  - Live transcription preview (interim results — not typed, just shown)
-  - Stop button
-
-Runs in its own daemon thread (separate tkinter event loop).
+Fully transparent body, only a glass border visible.
+Waveform and text contrast against whatever is behind.
 """
 from __future__ import annotations
 
@@ -19,49 +14,66 @@ from typing import Callable
 
 import tkinter as tk
 
-# ── palette (Vercel dark) ──────────────────────────────────────────────────
-_BG       = "#000000"
-_SURFACE  = "#0a0a0a"
-_BORDER   = "#1f1f1f"
-_TEXT     = "#ededed"
-_MUTED    = "#666666"
-_PREVIEW  = "#999999"   # interim text — slightly brighter than muted
-_DOT_ON   = "#ff4444"
-_DOT_OFF  = "#2a0a0a"
-_BTN_BG   = "#ededed"
-_BTN_FG   = "#000000"
-_BTN_HOV  = "#c8c8c8"
+_KEY = "#fe01fe"
 
-_FONT     = "Segoe UI"
-_MONO     = "Consolas"
+# ── minimal glass palette ─────────────────────────────────────────────────
+_BORDER    = "#55557a"     # glass rim — subtle, not white
+_TEXT      = "#ffffff"
+_PREVIEW   = "#ddddff"
+_DOT_ON    = "#ff3344"
+_DOT_OFF   = "#663333"
+_DOT_GLOW  = "#ff334466"
+_STOP_TXT  = "#ccccee"
+_STOP_HOV  = "#ffffff"
 
-_BAR_COUNT = 52
-_UPDATE_MS = 35   # ~28 fps
-_MAX_PREVIEW_CHARS = 72
+_FONT = "Segoe UI"
+_MONO = "Consolas"
+
+# ── geometry ──────────────────────────────────────────────────────────────
+_W, _H = 250, 46
+_R     = 20
+
+# ── waveform ──────────────────────────────────────────────────────────────
+_BAR_COUNT = 40
+_WF_X1, _WF_X2 = 76, 194
+_WF_CY     = 20
+_WF_MAX_H  = 11
+
+_UPDATE_MS   = 30
+_MAX_PREVIEW = 48
+
+
+def _pill(canvas: tk.Canvas, x1, y1, x2, y2, r, **kw):
+    pts = [
+        x1 + r, y1,    x2 - r, y1,
+        x2,     y1,    x2,     y1 + r,
+        x2,     y2 - r, x2,    y2,
+        x2 - r, y2,    x1 + r, y2,
+        x1,     y2,    x1,     y2 - r,
+        x1,     y1 + r, x1,    y1,
+    ]
+    return canvas.create_polygon(pts, smooth=True, **kw)
 
 
 class RecordingWindow:
-    """Small borderless floating HUD shown while recording."""
 
     def __init__(self, on_stop: Callable[[], None]) -> None:
-        self._on_stop = on_stop
-        self._amp_queue:  queue.Queue[float] = queue.Queue(maxsize=300)
-        self._text_queue: queue.Queue[str]   = queue.Queue(maxsize=50)
-        self._amplitudes: deque[float] = deque([0.0] * _BAR_COUNT, maxlen=_BAR_COUNT)
-        self._start_time: float = 0.0
+        self._on_stop    = on_stop
+        self._amp_queue  = queue.Queue(maxsize=300)
+        self._text_queue = queue.Queue(maxsize=50)
+        self._amplitudes = deque([0.0] * _BAR_COUNT, maxlen=_BAR_COUNT)
+        self._start_time = 0.0
         self._root: tk.Tk | None = None
-        self._thread: threading.Thread | None = None
-        self._alive = False
-        self._drag_x = 0
-        self._drag_y = 0
-
-    # ── public ────────────────────────────────────────────────────────────
+        self._canvas: tk.Canvas | None = None
+        self._alive      = False
+        self._drag_x     = 0
+        self._drag_y     = 0
+        self._preview    = ""
 
     def show(self) -> None:
         self._start_time = time.monotonic()
         self._alive = True
-        self._thread = threading.Thread(target=self._run, daemon=True, name="rec-window")
-        self._thread.start()
+        threading.Thread(target=self._run, daemon=True, name="rec-window").start()
 
     def hide(self) -> None:
         self._alive = False
@@ -78,181 +90,128 @@ class RecordingWindow:
             pass
 
     def push_text(self, text: str) -> None:
-        """Update the live transcription preview (call from any thread)."""
         try:
-            # Drain old pending updates — only the latest matters
             while not self._text_queue.empty():
                 self._text_queue.get_nowait()
             self._text_queue.put_nowait(text)
         except queue.Empty:
             pass
 
-    # ── window ────────────────────────────────────────────────────────────
-
     def _run(self) -> None:
         root = tk.Tk()
         self._root = root
-
         root.overrideredirect(True)
-        root.configure(bg=_BORDER)
+        root.configure(bg=_KEY)
         root.attributes("-topmost", True)
+        root.wm_attributes("-transparentcolor", _KEY)
 
-        W, H = 420, 160
         sw = root.winfo_screenwidth()
         sh = root.winfo_screenheight()
-        root.geometry(f"{W}x{H}+{(sw - W) // 2}+{sh - H - 60}")
+        root.geometry(f"{_W}x{_H}+{(sw - _W) // 2}+{sh - _H - 52}")
 
-        inner = tk.Frame(root, bg=_BG, padx=0, pady=0)
-        inner.pack(fill="both", expand=True, padx=1, pady=1)
+        c = tk.Canvas(root, width=_W, height=_H, bg=_KEY, highlightthickness=0)
+        c.pack()
+        self._canvas = c
 
-        self._build_widgets(inner)
+        # Glass depth: outer shadow → mid body → inner highlight
+        # Outer rim (dark, simulates shadow/depth behind the glass)
+        _pill(c, 0, 0, _W, _H, _R + 1,
+              fill="", outline="#222233", width=3)
+        # Main glass edge
+        _pill(c, 1, 1, _W - 1, _H - 1, _R,
+              fill="", outline="#55557a", width=1)
+        # Inner highlight (top-biased specular — light hitting the glass rim)
+        c.create_line(_R + 8, 3, _W - _R - 8, 3,
+                      fill="#8888bb", width=1, smooth=True)
+        # Bottom subtle reflection
+        c.create_line(_R + 14, _H - 3, _W - _R - 14, _H - 3,
+                      fill="#333355", width=1, smooth=True)
 
-        for w in (root, inner):
-            w.bind("<ButtonPress-1>", self._drag_start)
-            w.bind("<B1-Motion>",     self._drag_move)
+        # Stop — just text, no button box
+        sx = _W - 24
+        c.create_text(sx, 20, text="✕", font=(_FONT, 11), fill=_STOP_TXT, tags="stop")
+        c.tag_bind("stop", "<Button-1>",
+                   lambda _: threading.Thread(target=self._on_stop, daemon=True).start())
+        c.tag_bind("stop", "<Enter>", lambda _: c.itemconfig("stop", fill=_STOP_HOV))
+        c.tag_bind("stop", "<Leave>", lambda _: c.itemconfig("stop", fill=_STOP_TXT))
+
+        c.bind("<ButtonPress-1>", self._drag_start)
+        c.bind("<B1-Motion>",     self._drag_move)
 
         root.after(_UPDATE_MS, self._tick)
         root.mainloop()
-
-    def _build_widgets(self, parent: tk.Frame) -> None:
-        # ── row 1: indicator + timer ────────────────────────────────────
-        top = tk.Frame(parent, bg=_BG)
-        top.pack(fill="x", padx=16, pady=(12, 0))
-
-        self._dot = tk.Label(top, text="●", font=(_FONT, 10), fg=_DOT_ON, bg=_BG)
-        self._dot.pack(side="left")
-
-        tk.Label(top, text="  Recording",
-                 font=(_FONT, 11), fg=_MUTED, bg=_BG).pack(side="left")
-
-        self._timer = tk.Label(top, text="00:00",
-                               font=(_MONO, 13, "bold"), fg=_TEXT, bg=_BG)
-        self._timer.pack(side="right")
-
-        for w in top.winfo_children():
-            w.bind("<ButtonPress-1>", self._drag_start)
-            w.bind("<B1-Motion>",     self._drag_move)
-        top.bind("<ButtonPress-1>", self._drag_start)
-        top.bind("<B1-Motion>",     self._drag_move)
-
-        # ── row 2: waveform ──────────────────────────────────────────────
-        canvas_frame = tk.Frame(parent, bg=_BG)
-        canvas_frame.pack(fill="x", padx=16, pady=(8, 0))
-
-        self._canvas = tk.Canvas(canvas_frame, bg=_SURFACE, height=40,
-                                 highlightthickness=0)
-        self._canvas.pack(fill="x")
-
-        # ── row 3: live transcription preview ────────────────────────────
-        self._preview_var = tk.StringVar(value="")
-        self._preview_label = tk.Label(
-            parent,
-            textvariable=self._preview_var,
-            font=(_FONT, 9),
-            fg=_PREVIEW,
-            bg=_BG,
-            anchor="w",
-            justify="left",
-        )
-        self._preview_label.pack(fill="x", padx=16, pady=(6, 0))
-
-        # ── row 4: lang pill + stop button ──────────────────────────────
-        bot = tk.Frame(parent, bg=_BG)
-        bot.pack(fill="x", padx=16, pady=(6, 10))
-
-        from src import config as _cfg
-        tk.Label(bot, text=_cfg.LANGUAGE.upper(),
-                 font=(_MONO, 8), fg=_MUTED, bg="#111111",
-                 padx=6, pady=2).pack(side="left")
-
-        self._stop_btn = tk.Button(
-            bot, text="Stop",
-            font=(_FONT, 9, "bold"),
-            fg=_BTN_FG, bg=_BTN_BG,
-            activebackground=_BTN_HOV, activeforeground=_BTN_FG,
-            relief="flat", padx=14, pady=4, cursor="hand2",
-            command=self._on_stop_clicked,
-        )
-        self._stop_btn.pack(side="right")
-        self._stop_btn.bind("<Enter>", lambda e: self._stop_btn.config(bg=_BTN_HOV))
-        self._stop_btn.bind("<Leave>", lambda e: self._stop_btn.config(bg=_BTN_BG))
-
-    # ── update loop ───────────────────────────────────────────────────────
 
     def _tick(self) -> None:
         if not self._root or not self._alive:
             return
 
-        # Drain amplitude queue
+        c = self._canvas
+
         while True:
             try:
                 self._amplitudes.append(self._amp_queue.get_nowait())
             except queue.Empty:
                 break
 
-        # Drain text queue (latest wins)
-        latest_text: str | None = None
         while True:
             try:
-                latest_text = self._text_queue.get_nowait()
+                self._preview = self._text_queue.get_nowait()
             except queue.Empty:
                 break
-        if latest_text is not None:
-            display = latest_text
-            if len(display) > _MAX_PREVIEW_CHARS:
-                display = "…" + display[-((_MAX_PREVIEW_CHARS - 1)):]
-            self._preview_var.set(display)
 
-        # Timer
-        elapsed = time.monotonic() - self._start_time
+        elapsed    = time.monotonic() - self._start_time
         mins, secs = divmod(int(elapsed), 60)
-        self._timer.config(text=f"{mins:02d}:{secs:02d}")
+        time_str   = f"{mins:02d}:{secs:02d}"
+        dot_on     = int(elapsed * 2) % 2 == 0
 
-        # Blink dot
-        self._dot.config(fg=_DOT_ON if int(elapsed * 2) % 2 == 0 else _DOT_OFF)
+        c.delete("dyn")
 
-        self._draw_waveform()
-        self._root.after(_UPDATE_MS, self._tick)
+        # ── dot ──────────────────────────────────────────────────────────
+        dx, dy = 15, 20
+        c.create_oval(dx - 3, dy - 3, dx + 3, dy + 3,
+                      fill=_DOT_ON if dot_on else _DOT_OFF, outline="", tags="dyn")
 
-    def _draw_waveform(self) -> None:
-        c = self._canvas
-        c.delete("all")
-        cw = c.winfo_width()
-        ch = c.winfo_height()
-        if cw < 4:
-            return
+        # ── timer ────────────────────────────────────────────────────────
+        c.create_text(25, 20, text=time_str, anchor="w",
+                      font=(_MONO, 9, "bold"), fill=_TEXT, tags="dyn")
 
-        n = len(self._amplitudes)
-        bar_w = cw / n
-        cy = ch / 2
+        # ── waveform ─────────────────────────────────────────────────────
+        n     = len(self._amplitudes)
+        avail = _WF_X2 - _WF_X1
+        bar_w = avail / n
 
         for i, amp in enumerate(self._amplitudes):
-            x = i * bar_w + bar_w / 2
-            bar_h = max(2.0, amp * ch * 0.9)
-            brightness = int(60 + min(195, amp * 400))
-            color = f"#{brightness:02x}{brightness:02x}{brightness:02x}"
-            half = bar_w * 0.35
-            c.create_rectangle(x - half, cy - bar_h / 2,
-                                x + half, cy + bar_h / 2,
-                                fill=color, outline="")
+            x       = _WF_X1 + i * bar_w + bar_w / 2
+            boosted = min(1.0, amp ** 0.45 * 2.0)
+            h       = max(1.0, boosted * _WF_MAX_H)
+            v       = int(140 + min(115, boosted * 150))
+            b       = min(255, v + int(boosted * 40))
+            color   = f"#{v:02x}{v:02x}{b:02x}"
+            half    = max(0.5, bar_w * 0.22)
+            c.create_rectangle(
+                x - half, _WF_CY - h,
+                x + half, _WF_CY + h,
+                fill=color, outline="", tags="dyn",
+            )
 
-    # ── drag ─────────────────────────────────────────────────────────────
+        # ── preview ──────────────────────────────────────────────────────
+        if self._preview:
+            txt = self._preview
+            if len(txt) > _MAX_PREVIEW:
+                txt = "…" + txt[-(_MAX_PREVIEW - 1):]
+            c.create_text(12, 38, text=txt, anchor="w",
+                          font=(_FONT, 7), fill=_PREVIEW, tags="dyn")
+
+        self._root.after(_UPDATE_MS, self._tick)
 
     def _drag_start(self, event: tk.Event) -> None:
         self._drag_x = event.x_root - self._root.winfo_x()
         self._drag_y = event.y_root - self._root.winfo_y()
 
     def _drag_move(self, event: tk.Event) -> None:
-        x = event.x_root - self._drag_x
-        y = event.y_root - self._drag_y
-        self._root.geometry(f"+{x}+{y}")
-
-    # ── stop ─────────────────────────────────────────────────────────────
-
-    def _on_stop_clicked(self) -> None:
-        self._alive = False
-        self._destroy()
-        threading.Thread(target=self._on_stop, daemon=True).start()
+        self._root.geometry(
+            f"+{event.x_root - self._drag_x}+{event.y_root - self._drag_y}"
+        )
 
     def _destroy(self) -> None:
         if self._root:
